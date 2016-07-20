@@ -22,6 +22,9 @@ static int accept_connection(void *connection_data)
 	int rc;
 	kthread_sock_data_t *connection_info = (kthread_sock_data_t*)connection_data;
 
+	if (connection_info) {
+		printk(KERN_ERR "Connection socket=%p", connection_info->sock);
+	}
 	rc = kernel_accept(connection_info->sock, &connection_info->cli_socket, 0);
 	if (rc != 0) {
 		printk(KERN_ERR "Kerne is not accptin :| :%d\n", rc);
@@ -35,7 +38,6 @@ int init_module(void)
 {
 	int rc;
 
-	struct socket *sock;
 	struct sockaddr_in address;
 
 	thread_info = kmalloc(sizeof(kthread_sock_data_t), GFP_KERNEL);
@@ -44,9 +46,9 @@ int init_module(void)
 		return -1;
 	}
 
-	sock = thread_info->sock;
+	memset(thread_info, 0, sizeof(kthread_sock_data_t));
 
-	rc = sock_create_kern(AF_INET, SOCK_STREAM, 0, &sock);
+	rc = sock_create_kern(AF_INET, SOCK_STREAM, 0, &thread_info->sock);
 	if (rc != 0) {
 		printk(KERN_ERR "Socket creation failed");
 		return -1;
@@ -56,14 +58,14 @@ int init_module(void)
 	address.sin_addr.s_addr = INADDR_ANY;
 	address.sin_port = htons( (unsigned short)54668);
 
-	rc = kernel_bind(sock, (struct sockaddr *)&address, sizeof(address)); 
+	rc = kernel_bind(thread_info->sock, (struct sockaddr *)&address, sizeof(address)); 
 	if (rc != 0) {
 		printk(KERN_ERR "Socket Bind failed:%d\n", rc);
 		return -1;
 	}
 	printk(KERN_INFO "Socket bind success!!");
 
-	rc = kernel_listen(sock, 5); 
+	rc = kernel_listen(thread_info->sock, 5); 
 	if (rc != 0) {
 		printk(KERN_ERR "Failed to listen:%d\n", rc);
 		return -1;
