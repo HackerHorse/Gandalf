@@ -1,20 +1,50 @@
-/*  
- *   *  hello-1.c - The simplest kernel module.
- *    */
-#include <linux/module.h>	/* Needed by all modules */
-#include <linux/kernel.h>	/* Needed for KERN_INFO */
+#include <linux/module.h>
+#include <linux/kernel.h>
 #include <linux/net.h>
 #include <linux/in.h>
 #include <net/sock.h>
 #include <linux/skbuff.h>
 #include <linux/delay.h>
 #include <linux/inet.h>
+#include<linux/kthread.h>
+#include<linux/sched.h>
+
+typedef struct kthread_sock_data {
+	struct socket *sock;
+	struct socket *cli_socket;
+	struct task_struct *listener_thread;
+} kthread_sock_data_t;
+
+kthread_sock_data_t *thread_info;
+
+static int accept_connection(void *connection_data)
+{
+	int rc;
+	kthread_sock_data_t *connection_info = (kthread_sock_data_t*)connection_data;
+
+	rc = kernel_accept(connection_info->sock, &connection_info->cli_socket, 0);
+	if (rc != 0) {
+		printk(KERN_ERR "Kerne is not accptin :| :%d\n", rc);
+		return -1;
+	}
+	printk(KERN_INFO "Please go on mortal!!");
+	return 0;
+}
 
 int init_module(void)
 {
 	int rc;
-	struct socket *sock, *cli_socket;
+
+	struct socket *sock;
 	struct sockaddr_in address;
+
+	thread_info = kmalloc(sizeof(kthread_sock_data_t), GFP_KERNEL);
+	if (!thread_info) {
+		printk(KERN_ERR "Thread allocation failed:");
+		return -1;
+	}
+
+	sock = thread_info->sock;
 
 	rc = sock_create_kern(AF_INET, SOCK_STREAM, 0, &sock);
 	if (rc != 0) {
@@ -40,21 +70,22 @@ int init_module(void)
 	}
 	printk(KERN_INFO "I am listening!!");
 
-	rc = kernel_accept(sock, &cli_socket, 0);
-	if (rc != 0) {
-		printk(KERN_ERR "Kerne is not accptin :| :%d\n", rc);
+	thread_info->listener_thread = kthread_run(accept_connection, (void*)thread_info, "listener_thread");
+	if (!thread_info->listener_thread) {
+		printk(KERN_ERR "Failed to run listener thread");
 		return -1;
 	}
-	printk(KERN_INFO "Please go on mortal!!");
-
-	/* 
- * 	 * A non 0 return means init_module failed; module can't be loaded. 
- * 	 	 */
-	sock_release(sock);	
+	
 	return 0;
 }
 
 void cleanup_module(void)
 {
-	printk(KERN_INFO "Goodbye world 1.\n");
+	int rc;
+	rc = kthread_stop(thread_info->listener_thread);
+	if (rc != 0)
+		printk(KERN_ERR "Some error in kernel accept connection.");
+
+	sock_release(thread_info->sock);
+	kfree(thread_info);	
 }
